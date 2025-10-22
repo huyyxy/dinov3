@@ -42,10 +42,12 @@ def load_images_from_tar(tar_path: str) -> list:
     """从 tar.gz 文件中加载图像"""
     images = []
     with tarfile.open(tar_path, "r:gz") as tar:
-        for member in sorted(tar.getmembers()):
+        for member in sorted(tar.getmembers(), key=lambda m: m.name):
             if member.isfile():
                 image_data = tar.extractfile(member)
                 image = Image.open(image_data)
+                # 在 tar 文件关闭前强制加载图像数据到内存
+                image.load()
                 images.append(image)
     return images
 
@@ -218,6 +220,12 @@ def main():
         help="DINOv3 仓库位置（本地路径或 'github'）",
     )
     parser.add_argument(
+        "--weights",
+        type=str,
+        default=None,
+        help="预训练权重文件路径（可选）",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=".",
@@ -272,11 +280,18 @@ def main():
 
     # 加载模型
     print(f"\n加载 DINOv3 模型: {args.model_name}")
-    model = torch.hub.load(
-        repo_or_dir=dinov3_location,
-        model=args.model_name,
-        source=source,
-    )
+    load_kwargs = {
+        "repo_or_dir": dinov3_location,
+        "model": args.model_name,
+        "source": source,
+    }
+    
+    # 如果指定了权重文件，则使用本地权重
+    if args.weights:
+        print(f"使用本地权重: {args.weights}")
+        load_kwargs["weights"] = args.weights
+    
+    model = torch.hub.load(**load_kwargs)
     model.to(args.device)
     model.eval()
     print("模型加载完成！")
